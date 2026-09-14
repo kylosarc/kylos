@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Watermark — Local-First C2PA Content Credentials Verifier</title>
+  <meta name="description" content="Browser-based forensic inspection of C2PA Content Credentials. Verify provenance, detect AI generation, and analyze text — all locally." />
+  <link rel="icon" type="image/svg+xml" href="logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Watermark Color Scheme ──────────────────────────────── */
+    :root {
+      --color-bg: #0c0e11;
+      --color-bg-raised: #121417;
+      --color-bg-card: #181b1f;
+      --color-bg-hover: #1e2126;
+      --color-surface: #23272c;
+      --color-border: rgba(61, 73, 76, 0.3);
+      --color-border-strong: rgba(61, 73, 76, 0.5);
+      --color-primary: #4cd7f6;
+      --color-primary-dim: rgba(76, 215, 246, 0.12);
+      --color-secondary: #d0bcff;
+      --color-secondary-dim: rgba(208, 188, 255, 0.1);
+      --color-tertiary: #4edea3;
+      --color-tertiary-dim: rgba(78, 222, 163, 0.1);
+      --color-text: #e8eaed;
+      --color-text-dim: #9aa0a6;
+      --color-text-muted: #5f6368;
+      --color-danger: #f43f5e;
+      --color-warning: #f59e0b;
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-bg);
+      color: var(--color-text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────── */
+    .page { display: flex; min-height: 100vh; }
+
+    .sidebar {
+      position: fixed;
+      top: 0; left: 0;
+      width: 280px;
+      height: 100vh;
+      background: var(--color-bg-raised);
+      border-right: 1px solid var(--color-border);
+      overflow-y: auto;
+      padding: 24px 0;
+      z-index: 100;
+    }
+
+    .sidebar-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 20px 20px;
+      border-bottom: 1px solid var(--color-border);
+      margin-bottom: 16px;
+    }
+
+    .sidebar-logo img { width: 32px; height: 32px; }
+
+    .sidebar-logo h1 {
+      font-size: 1.125rem;
+      font-weight: 700;
+      color: var(--color-text);
+      letter-spacing: -0.02em;
+    }
+
+    .sidebar-logo .version {
+      font-size: 0.625rem;
+      font-weight: 500;
+      color: var(--color-primary);
+      background: var(--color-primary-dim);
+      border: 1px solid rgba(76, 215, 246, 0.2);
+      border-radius: 4px;
+      padding: 1px 6px;
+      margin-left: auto;
+    }
+
+    .sidebar-section {
+      padding: 0 12px;
+      margin-bottom: 8px;
+    }
+
+    .sidebar-section-title {
+      font-size: 0.625rem;
+      font-weight: 600;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 8px 8px 4px;
+    }
+
+    .sidebar a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 6px;
+      color: var(--color-text-dim);
+      text-decoration: none;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+
+    .sidebar a:hover {
+      color: var(--color-text);
+      background: var(--color-bg-hover);
+    }
+
+    .sidebar a.active {
+      color: var(--color-primary);
+      background: var(--color-primary-dim);
+    }
+
+    .sidebar .icon {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .sidebar .icon svg { width: 16px; height: 16px; }
+
+    .main-content {
+      margin-left: 280px;
+      flex: 1;
+      padding: 48px 64px;
+      max-width: 900px;
+    }
+
+    /* ── Hero ────────────────────────────────────────────────── */
+    .hero {
+      padding: 32px 0 48px;
+      border-bottom: 1px solid var(--color-border);
+      margin-bottom: 48px;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.6875rem;
+      font-weight: 500;
+      color: var(--color-tertiary);
+      background: var(--color-tertiary-dim);
+      border: 1px solid rgba(78, 222, 163, 0.2);
+      border-radius: 20px;
+      padding: 4px 12px;
+      margin-bottom: 16px;
+    }
+
+    .hero-badge .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--color-tertiary);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .hero h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 12px;
+    }
+
+    .hero h1 .gradient {
+      background: linear-gradient(135deg, var(--color-primary), var(--color-tertiary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero .tagline {
+      font-size: 1.125rem;
+      color: var(--color-text-dim);
+      max-width: 600px;
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .hero-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: none;
+    }
+
+    .hero-btn.primary {
+      background: var(--color-primary);
+      color: var(--color-bg);
+    }
+
+    .hero-btn.primary:hover { background: #3cc8e6; }
+
+    .hero-btn.secondary {
+      background: var(--color-bg-card);
+      color: var(--color-text);
+      border: 1px solid var(--color-border);
+    }
+
+    .hero-btn.secondary:hover {
+      border-color: var(--color-primary);
+      background: var(--color-primary-dim);
+    }
+
+    /* ── Sections ────────────────────────────────────────────── */
+    .section {
+      padding: 48px 0;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .section:last-child { border-bottom: none; }
+
+    .section-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px; height: 40px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+    }
+
+    .section-icon.primary { background: var(--color-primary-dim); color: var(--color-primary); }
+    .section-icon.secondary { background: var(--color-secondary-dim); color: var(--color-secondary); }
+    .section-icon.tertiary { background: var(--color-tertiary-dim); color: var(--color-tertiary); }
+    .section-icon.danger { background: rgba(244, 63, 94, 0.1); color: var(--color-danger); }
+
+    .section h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+    }
+
+    .section .subtitle {
+      font-size: 0.875rem;
+      color: var(--color-text-dim);
+      margin-bottom: 24px;
+      max-width: 600px;
+    }
+
+    /* ── Feature Cards ───────────────────────────────────────── */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+    }
+
+    .feature-card {
+      background: var(--color-bg-card);
+      border: 1px solid var(--color-border);
+      border-radius: 10px;
+      padding: 20px;
+      transition: all 0.2s;
+    }
+
+    .feature-card:hover {
+      border-color: rgba(76, 215, 246, 0.3);
+      background: var(--color-bg-hover);
+      transform: translateY(-1px);
+    }
+
+    .feature-card-icon {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 10px;
+    }
+
+    .feature-card-icon svg { width: 18px; height: 18px; }
+
+    .feature-card h3 {
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .feature-card p {
+      font-size: 0.75rem;
+      color: var(--color-text-dim);
+      line-height: 1.5;
+    }
+
+    /* ── Code Blocks ─────────────────────────────────────────── */
+    .code-block {
+      background: var(--color-bg-card);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin: 16px 0;
+    }
+
+    .code-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      background: rgba(18, 20, 23, 0.6);
+      border-bottom: 1px solid var(--color-border);
+      font-size: 0.6875rem;
+      color: var(--color-text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .code-block pre {
+      padding: 14px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      line-height: 1.6;
+      color: var(--color-text);
+    }
+
+    .code-block code {
+      font-family: inherit;
+    }
+
+    .kw { color: var(--color-secondary); }
+    .str { color: var(--color-tertiary); }
+    .fn { color: var(--color-primary); }
+    .cmt { color: var(--color-text-muted); }
+    .num { color: var(--color-warning); }
+
+    /* ── Spec Table ──────────────────────────────────────────── */
+    .spec-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8125rem;
+    }
+
+    .spec-table th {
+      text-align: left;
+      padding: 10px 14px;
+      font-weight: 600;
+      color: var(--color-text-dim);
+      border-bottom: 1px solid var(--color-border);
+      font-size: 0.6875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .spec-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(61, 73, 76, 0.15);
+      vertical-align: top;
+    }
+
+    .spec-table td:first-child {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--color-primary);
+      white-space: nowrap;
+    }
+
+    .spec-table tr:hover td {
+      background: rgba(76, 215, 246, 0.03);
+    }
+
+    /* ── Format Tags ─────────────────────────────────────────── */
+    .format-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .format-tag {
+      font-size: 0.6875rem;
+      font-weight: 500;
+      font-family: var(--font-mono);
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid;
+    }
+
+    .format-tag.img { color: var(--color-primary); border-color: rgba(76, 215, 246, 0.3); background: var(--color-primary-dim); }
+    .format-tag.vid { color: var(--color-secondary); border-color: rgba(208, 188, 255, 0.3); background: var(--color-secondary-dim); }
+    .format-tag.txt { color: var(--color-tertiary); border-color: rgba(78, 222, 163, 0.3); background: var(--color-tertiary-dim); }
+    .format-tag.doc { color: var(--color-warning); border-color: rgba(245, 158, 11, 0.3); background: rgba(245, 158, 11, 0.1); }
+
+    /* ── Workflow Steps ──────────────────────────────────────── */
+    .workflow-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .workflow-step {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .workflow-num {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      flex-shrink: 0;
+      background: var(--color-primary-dim);
+      color: var(--color-primary);
+      border: 1px solid rgba(76, 215, 246, 0.3);
+    }
+
+    .workflow-step h3 {
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .workflow-step p {
+      font-size: 0.8125rem;
+      color: var(--color-text-dim);
+      line-height: 1.5;
+    }
+
+    /* ── Tech Stack ──────────────────────────────────────────── */
+    .tech-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .tech-item {
+      background: var(--color-bg-card);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .tech-item h4 {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .tech-item p {
+      font-size: 0.75rem;
+      color: var(--color-text-dim);
+    }
+
+    /* ── Animated Grid Background ────────────────────────────── */
+    .grid-bg {
+      position: fixed;
+      top: 0; left: 280px; right: 0; bottom: 0;
+      background-image:
+        linear-gradient(rgba(76, 215, 246, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(76, 215, 246, 0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    /* ── Responsive ──────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      .sidebar { display: none; }
+      .main-content { margin-left: 0; padding: 24px; }
+      .hero h1 { font-size: 1.75rem; }
+      .feature-grid { grid-template-columns: 1fr; }
+      .tech-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── Scrollbar ───────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+  </style>
+</head>
+<body>
+  <div class="grid-bg"></div>
+  <div class="page">
+    <!-- ── Sidebar ────────────────────────────────────────── -->
+    <nav class="sidebar">
+      <div class="sidebar-logo">
+        <img src="logo.svg" alt="Watermark" />
+        <h1>Watermark</h1>
+        <span class="version">v0.1</span>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Overview</div>
+        <a href="#getting-started"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span>Getting Started</a>
+        <a href="#workflow"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg></span>Workflow</a>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Inspection Tools</div>
+        <a href="#inspector"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>Inspector</a>
+        <a href="#batch"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg></span>Batch Report</a>
+        <a href="#diff"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M16 7l-4-4-4 4"/><path d="M16 17l-4 4-4-4"/></svg></span>Provenance Diff</a>
+        <a href="#simulator"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>What Would Break?</a>
+        <a href="#playground"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>Trust Playground</a>
+        <a href="#lineage"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></span>Manifest Lineage</a>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Text Tools</div>
+        <a href="#text-analysis"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg></span>Text Analysis</a>
+        <a href="#unsloper"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg></span>Unsloper</a>
+        <a href="#stripper"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>Stripper / Obfuscator</a>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Reference</div>
+        <a href="#supported-formats"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg></span>Supported Formats</a>
+        <a href="#tech-stack"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></span>Tech Stack</a>
+        <a href="https://github.com/kylosarc/watermark"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg></span>View on GitHub</a>
+      </div>
+    </nav>
+
+    <!-- ── Main Content ───────────────────────────────────── -->
+    <main class="main-content">
+      <!-- Hero -->
+      <section class="hero" id="top">
+        <div class="hero-badge"><span class="dot"></span> Local-first — nothing leaves your browser</div>
+        <h1><span class="gradient">Watermark</span></h1>
+        <p class="tagline">
+          Browser-based forensic inspection of <strong>C2PA Content Credentials</strong>.
+          Verify provenance, detect AI generation, simulate tampering, and analyze text — all locally via WebAssembly.
+        </p>
+        <div class="hero-actions">
+          <a href="http://localhost:5173" class="hero-btn primary">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Open App
+          </a>
+          <a href="https://github.com/kylosarc/watermark" class="hero-btn secondary">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+            View on GitHub
+          </a>
+        </div>
+      </section>
+
+      <!-- Getting Started -->
+      <section class="section" id="getting-started">
+        <div class="section-icon primary"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></div>
+        <h2>Getting Started</h2>
+        <p class="subtitle">Zero installation. Open the app in your browser and drag a file to begin.</p>
+
+        <div class="workflow-steps">
+          <div class="workflow-step">
+            <div class="workflow-num">1</div>
+            <div>
+              <h3>Open the App</h3>
+              <p>Navigate to <code style="color:var(--color-primary);font-family:var(--font-mono);font-size:0.8125rem">http://localhost:5173</code> in your browser. The C2PA WASM module loads automatically.</p>
+            </div>
+          </div>
+          <div class="workflow-step">
+            <div class="workflow-num">2</div>
+            <div>
+              <h3>Drop a File</h3>
+              <p>Drag any supported image, video, audio, PDF, PPTX, or text file onto the inspector. Or click <strong>Load Sample</strong> to try the demo asset.</p>
+            </div>
+          </div>
+          <div class="workflow-step">
+            <div class="workflow-num">3</div>
+            <div>
+              <h3>Inspect Credentials</h3>
+              <p>View the full C2PA manifest chain — issuer, algorithm, assertions, ingredients, validation state, and raw JSON. Everything runs in your browser.</p>
+            </div>
+          </div>
+          <div class="workflow-step">
+            <div class="workflow-num">4</div>
+            <div>
+              <h3>Explore the Tools</h3>
+              <p>Use Batch Report for multi-file scanning, Provenance Diff to compare manifests, What Would Break? to simulate tampering, and more.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Workflow -->
+      <section class="section" id="workflow">
+        <div class="section-icon tertiary"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg></div>
+        <h2>How It Works</h2>
+        <p class="subtitle">All processing happens locally in your browser. No server, no cloud, no data leaves your machine.</p>
+
+        <div class="code-block">
+          <div class="code-header">architecture</div>
+          <pre><code><span class="cmt">// Browser-only verification pipeline</span>
+<span class="kw">File</span> → <span class="fn">SHA-256 Hash</span> → <span class="fn">C2PA WASM SDK</span> → <span class="fn">Manifest Store</span> → <span class="fn">Normalize</span> → <span class="str">VerificationResult</span>
+
+<span class="cmt">// Supported verification path</span>
+<span class="kw">Image/Video/Audio</span> → <span class="fn">@contentauth/c2pa-web 0.14.5</span> (Browser WASM)
+<span class="kw">PDF</span>              → <span class="fn">pdfjs-dist</span> (Text extraction + SHA-256)
+<span class="kw">PPTX</span>             → <span class="fn">@fefeding/ppt-parser</span> (Slide text + SHA-256)
+<span class="kw">Plain text</span>       → <span class="fn">TextEncoder</span> + <span class="fn">SubtleCrypto</span> (SHA-256 + analysis)
+
+<span class="cmt">// No network requests. Ever.</span></code></pre>
+        </div>
+      </section>
+
+      <!-- Inspector -->
+      <section class="section" id="inspector">
+        <div class="section-icon primary"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div>
+        <h2>Inspector</h2>
+        <p class="subtitle">Forensic-grade inspection of C2PA Content Credentials with animated viewport and byte-level analysis.</p>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <div class="feature-card-icon" style="background:var(--color-primary-dim);color:var(--color-primary)"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+            <h3>C2PA Verification</h3>
+            <p>Full manifest chain validation via WebAssembly — issuer, trust, algorithm, and assertion verification.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-icon" style="background:var(--color-tertiary-dim);color:var(--color-tertiary)"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+            <h3>Manifest Overview</h3>
+            <p>View active manifest, trust status, claim generator, signed date, and validation state at a glance.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-icon" style="background:var(--color-secondary-dim);color:var(--color-secondary)"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+            <h3>Raw JSON</h3>
+            <p>Full manifest dump with syntax highlighting for deep forensic inspection of every field.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-icon" style="background:rgba(245,158,11,0.1);color:var(--color-warning)"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg></div>
+            <h3>SHA-256 Hashing</h3>
+            <p>Browser-native cryptographic hashing via SubtleCrypto for content binding verification.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Batch Report -->
+      <section class="section" id="batch">
+        <div class="section-icon secondary"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg></div>
+        <h2>Batch Report</h2>
+        <p class="subtitle">Scan entire folders of media files in parallel. Results exportable as CSV or JSON.</p>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <h3>Folder & Multi-File Upload</h3>
+            <p>Drag a folder or select multiple files. Processes up to 4 files in parallel for speed.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Results Table</h3>
+            <p>File name, size, MIME type, C2PA status, validation state, issuer, algorithm — all in one view.</p>
+          </div>
+          <div class="feature-card">
+            <h3>CSV / JSON Export</h3>
+            <p>Export batch results for compliance reports, audit trails, or further analysis.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Provenance Diff -->
+      <section class="section" id="diff">
+        <div class="section-icon primary"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M16 7l-4-4-4 4"/><path d="M16 17l-4 4-4-4"/></svg></div>
+        <h2>Provenance Diff</h2>
+        <p class="subtitle">Side-by-side comparison of two files' provenance chains — see what changed, what survived, and what was added.</p>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <h3>Assertion Diff</h3>
+            <p>Compare assertions between two manifests — survived, added, removed — with visual indicators.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Ingredient Comparison</h3>
+            <p>See which ingredients are shared or unique between two provenance chains.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Provenance Distance</h3>
+            <p>Score (0–100%) measuring how far apart two files' provenance chains are.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Simulator -->
+      <section class="section" id="simulator">
+        <div class="section-icon danger"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+        <h2>What Would Break?</h2>
+        <p class="subtitle">Simulate 12 common transformations to see which would destroy C2PA credentials.</p>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <h3>12 Canvas Transformations</h3>
+            <p>JPEG recompression (Q90/Q50), resize, crop, rotate, flip, blur, brightness, grayscale, format conversion.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Preserved / Broken Grid</h3>
+            <p>Visual results grid showing which operations preserved credentials and which broke them.</p>
+          </div>
+          <div class="feature-card">
+            <h3>JSON Export</h3>
+            <p>Export simulation results for compliance documentation or tamper-resistance analysis.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Trust Playground -->
+      <section class="section" id="playground">
+        <div class="section-icon secondary"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></div>
+        <h2>Trust Playground</h2>
+        <p class="subtitle">Define custom trust policies and test files against them — see exactly which rules pass or fail.</p>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <h3>Policy Rules Editor</h3>
+            <p>Require content binding, set minimum trust levels, accept/reject assertion sets and algorithms.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Issuer Pattern Matching</h3>
+            <p>Accept or reject issuers by regex pattern. Whitelist or blacklist specific trust anchors.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Per-Rule Results</h3>
+            <p>Pass/fail for every rule with detailed messages. Export policy + results as JSON.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Manifest Lineage -->
+      <section class="section" id="lineage">
+        <div class="section-icon primary"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></div>
+        <h2>Manifest Lineage</h2>
+        <p class="subtitle">Visual graph of the manifest chain — parent, active, and ingredient relationships.</p>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <h3>SVG Graph</h3>
+            <p>Node types: Active (blue glow), Parent (purple), Ingredient (green), Original (amber). Pan & zoom.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Click-to-Inspect</h3>
+            <p>Click any node to see issuer, algorithm, date, assertions, and content bindings.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Fit-to-View</h3>
+            <p>Auto-layout with fit-to-view button for complex multi-ingredient manifests.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Text Analysis -->
+      <section class="section" id="text-analysis">
+        <div class="section-icon tertiary"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+        <h2>Text Analysis</h2>
+        <p class="subtitle">Multi-file text analysis with AI detection, readability metrics, and text simulation.</p>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <h3>Multi-File Upload</h3>
+            <p>Drop multiple text, PDF, or PPTX files at once. Each gets individual analysis in a batch list.</p>
+          </div>
+          <div class="feature-card">
+            <h3>AI Detection</h3>
+            <p>150+ pattern dictionary detecting AI-typical phrases, vocabulary richness, burstiness, and repetition.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Readability Metrics</h3>
+            <p>Sentence uniformity, burstiness, vocabulary richness, top words, and character/word/sentence counts.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Text Simulator</h3>
+            <p>16 text transformations (line endings, Unicode, BOM, truncation) to test hash preservation.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Unsloper -->
+      <section class="section" id="unsloper">
+        <div class="section-icon primary"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg></div>
+        <h2>Unsloper</h2>
+        <p class="subtitle">Detect and remove AI writing patterns — verbose synonyms, throat-clearing, chatbot phrases, and buzzwords.</p>
+
+        <div class="code-block">
+          <div class="code-header">example transformations</div>
+          <pre><code><span class="cmt">// Before (AI slop)</span>
+In today's fast-paced landscape, it's crucial to leverage our holistic
+approach to showcase robust synergies. Furthermore, this paradigm shift
+underscores its significance. I hope this helps!
+
+<span class="cmt">// After (unslopped)</span>
+This approach uses our strengths to show strong coordination. This change
+matters. <span class="cmt">(2 patterns removed, 4 verbose → direct)</span></code></pre>
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <h3>Pattern Categories</h3>
+            <p>Throat-clearing, verbose synonyms, buzzwords, inflated importance, chatbot, encyclopedia, marketing.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Before / After</h3>
+            <p>Pattern count by category, character reduction percentage, and full pattern list with replacements.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stripper -->
+      <section class="section" id="stripper">
+        <div class="section-icon secondary"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+        <h2>Stripper / Obfuscator</h2>
+        <p class="subtitle">Anonymize identifying information and clean formatting from text before sharing.</p>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <h3>Anonymize</h3>
+            <p>Replace names → [NAME], emails → [EMAIL], phones → [PHONE], URLs → [URL].</p>
+          </div>
+          <div class="feature-card">
+            <h3>Strip Formatting</h3>
+            <p>Remove markdown syntax, HTML tags, line numbers, BOM, non-printable characters.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Normalize</h3>
+            <p>Collapse whitespace, normalize line endings, trim trailing spaces, collapse blank lines.</p>
+          </div>
+          <div class="feature-card">
+            <h3>Presets</h3>
+            <p>One-click presets: anonymize, clean, full (everything), reset. Mix and match individual options.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Supported Formats -->
+      <section class="section" id="supported-formats">
+        <div class="section-icon primary"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+        <h2>Supported Formats</h2>
+        <p class="subtitle">C2PA verification, text extraction, or content hashing — depending on format.</p>
+
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px">
+          <div>
+            <h4 style="font-size:0.75rem;font-weight:600;color:var(--color-text-dim);margin-bottom:8px">C2PA Verification (full manifest chain)</h4>
+            <div class="format-tags">
+              <span class="format-tag img">JPEG</span>
+              <span class="format-tag img">PNG</span>
+              <span class="format-tag img">WebP</span>
+              <span class="format-tag img">HEIF</span>
+              <span class="format-tag img">TIFF</span>
+              <span class="format-tag img">AVIF</span>
+              <span class="format-tag vid">MP4</span>
+              <span class="format-tag vid">MOV</span>
+              <span class="format-tag vid">WAV</span>
+              <span class="format-tag vid">MP3</span>
+            </div>
+          </div>
+          <div>
+            <h4 style="font-size:0.75rem;font-weight:600;color:var(--color-text-dim);margin-bottom:8px">Text Extraction + Hashing</h4>
+            <div class="format-tags">
+              <span class="format-tag doc">PDF</span>
+              <span class="format-tag doc">PPTX</span>
+            </div>
+          </div>
+          <div>
+            <h4 style="font-size:0.75rem;font-weight:600;color:var(--color-text-dim);margin-bottom:8px">Plain Text Analysis (60+ extensions)</h4>
+            <div class="format-tags">
+              <span class="format-tag txt">.txt</span>
+              <span class="format-tag txt">.md</span>
+              <span class="format-tag txt">.json</span>
+              <span class="format-tag txt">.html</span>
+              <span class="format-tag txt">.csv</span>
+              <span class="format-tag txt">.xml</span>
+              <span class="format-tag txt">.py</span>
+              <span class="format-tag txt">.ts</span>
+              <span class="format-tag txt">.js</span>
+              <span class="format-tag txt">.go</span>
+              <span class="format-tag txt">.rs</span>
+              <span class="format-tag txt">.java</span>
+              <span class="format-tag txt">+50 more</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tech Stack -->
+      <section class="section" id="tech-stack">
+        <div class="section-icon tertiary"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+        <h2>Tech Stack</h2>
+        <p class="subtitle">Zero server dependencies. Everything runs in the browser.</p>
+
+        <div class="tech-grid">
+          <div class="tech-item">
+            <h4 style="color:var(--color-primary)">C2PA Verification</h4>
+            <p>@contentauth/c2pa-web 0.14.5 — Browser WASM SDK for Content Credentials</p>
+          </div>
+          <div class="tech-item">
+            <h4 style="color:var(--color-secondary)">PDF Extraction</h4>
+            <p>pdfjs-dist — Mozilla's PDF.js for browser-side text extraction</p>
+          </div>
+          <div class="tech-item">
+            <h4 style="color:var(--color-tertiary)">PPTX Extraction</h4>
+            <p>@fefeding/ppt-parser — TypeScript PPTX slide text extraction</p>
+          </div>
+          <div class="tech-item">
+            <h4 style="color:var(--color-warning)">Crypto</h4>
+            <p>SubtleCrypto — Browser-native SHA-256 hashing via WebCrypto API</p>
+          </div>
+          <div class="tech-item">
+            <h4>Framework</h4>
+            <p>React 19 + TypeScript + Vite 8 — Fast dev server and optimized builds</p>
+          </div>
+          <div class="tech-item">
+            <h4>Fonts</h4>
+            <p>Geist (UI) + JetBrains Mono (code) — Tabular figures, ligatures</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Active nav highlight -->
+  <script>
+    const links = document.querySelectorAll('.sidebar a[href^="#"]');
+    const sections = Array.from(links).map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+
+    function updateNav() {
+      let current = '';
+      for (const section of sections) {
+        if (section.getBoundingClientRect().top <= 120) current = section.id;
+      }
+      links.forEach(a => {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+      });
+    }
+
+    window.addEventListener('scroll', updateNav, { passive: true });
+    updateNav();
+  </script>
+</body>
+</html>
